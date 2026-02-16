@@ -53,3 +53,7 @@
 ## License
 
 MIT
+
+
+## usage
+gh repo create my-project --template dduck00/pe-ai-template-claude
