@@ -17,6 +17,10 @@ build/
 .vscode/
 *.swp
 
+# Claude Code (personal settings)
+.claude/settings.local.json
+.mcp.json
+
 # OS
 .DS_Store
 Thumbs.db
