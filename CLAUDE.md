@@ -1,9 +1,10 @@
 # Project Agent System v2
 
-## Agent 구조 (14개)
+## Agent 구조 (15개)
 
 ```
 Agents
+├─ Auto Orchestrator (/auto)           - Phase A/B/C 워크플로우 자동화 + 병렬 실행
 ├─ PM Group
 │  ├─ PM Lead (/pm-lead)              - 요구사항 → 기능/페이지 정의, SSOT + INDEX 유지
 │  ├─ PM Builder (/pm-build)          - 페이지별 상세 스펙 작성
@@ -62,6 +63,36 @@ docs/pages/
 - 인프라/배포: `DEPLOY.md`
 - 문서 간 충돌 발견 시 `/pm-lead`가 판단하고 `docs/DECISIONS/`에 기록한다.
 
+## Auto Orchestrator (/auto)
+
+`/auto`는 Phase A/B/C 워크플로우를 자동 실행하는 오케스트레이터다. 각 skill `.md` 파일을 런타임에 읽어 인라인 또는 Task sub-agent로 실행한다.
+
+### 서브커맨드
+
+| 명령 | 설명 |
+|------|------|
+| `/auto init` | Phase A 전체 (A-1 → A-2 → A-3) |
+| `/auto page {page_ids}` | Phase B 전체 (B-1 ~ 리뷰, 복수 페이지 쉼표 구분) |
+| `/auto build {page_ids}` | B-4+B-5 병렬 빌드만 |
+| `/auto review {page_ids}` | 리뷰 3종 병렬만 |
+| `/auto release` | Phase C |
+| `/auto` (인자 없음) | INDEX.md 상태 기반 자동 감지 |
+
+### 실행 방식
+
+- **순차 (인라인)**: skill `.md`를 읽고 오케스트레이터가 직접 수행 (A-1, A-2, B-1~B-3, C-1)
+- **병렬 (Task sub-agent)**: skill `.md` 내용을 프롬프트로 주입하여 동시 실행 (A-3, B-4+B-5, 리뷰)
+- Builder sub-agent는 `isolation: "worktree"`로 격리하여 FE/BE 충돌 방지
+
+### /auto 핵심 원칙
+
+1. **INDEX.md 단일 갱신자**: sub-agent는 INDEX.md 수정 금지, 오케스트레이터만 갱신
+2. **순차 구간 존중**: B-1→B-2→B-3은 절대 병렬 불가 (산출물 의존)
+3. **기존 Skill 파일 무수정**: auto.md가 런타임에 skill `.md`를 읽어서 주입
+4. **상태 스킵**: 이미 완료된 단계는 건너뜀 (INDEX.md 상태 기반)
+5. **실패 격리**: 한 페이지 실패해도 다른 페이지는 계속 진행
+6. **리뷰 게이트**: 최대 3회 재시도, 초과 시 Lead 에스컬레이션
+
 ## 호출 플로우
 
 ### Phase A: 프로젝트 초기 (1회)
@@ -90,6 +121,7 @@ docs/pages/
 - **B-4 + B-5 병렬 가능**: 동일 page_id에서 B-3(api.md 확정) 이후 BE/FE Builder를 동시에 실행할 수 있다.
 - **서로 다른 page_id 병렬 가능**: page_id간 의존성이 없으면 각각의 Phase B를 동시에 진행할 수 있다. 단, INDEX.md 갱신 시 충돌에 주의한다.
 - **병렬 불가 구간**: B-1 → B-2 → B-3은 순차 실행 (각 산출물이 다음 단계의 입력).
+- **`/auto` 사용 시**: 오케스트레이터가 병렬 규칙을 자동 적용한다. B-4+B-5는 Task sub-agent(worktree 격리)로 동시 실행하고, 리뷰 3종도 병렬 실행한다. INDEX.md는 오케스트레이터만 갱신하므로 충돌이 발생하지 않는다.
 
 ### Phase C: 릴리즈 (마일스톤)
 
@@ -251,3 +283,10 @@ docs/pages/
 - 이 템플릿은 1인 Claude Code 기반 순차 작업에 최적화되어 있다.
 - 여러 개발자가 동시 작업 시: 각자 다른 page_id를 담당하고, SSOT/INDEX 수정은 한 명이 담당하여 충돌을 방지한다.
 - Git branching: page_id별 feature branch 사용을 권장한다 (예: `feature/{page_id}`).
+
+### /auto 오케스트레이터 활용
+
+- `/auto`는 수동 호출 플로우를 자동화한 것이다. 개별 skill의 동작은 동일하다.
+- `/auto page {page_ids}`로 복수 페이지를 한 번에 처리할 수 있다 (크로스 페이지 빌드/리뷰 병렬).
+- `/auto` (인자 없음)로 현재 상태를 자동 감지하고 다음 액션을 제안받을 수 있다.
+- 세밀한 제어가 필요하면 개별 skill을 직접 호출한다 (`/pm-build`, `/fe-build` 등).

@@ -1,6 +1,6 @@
 # Claude Code Agent System Template v2
 
-14-agent system for large-scale Claude Code projects with page-scoped, document-driven workflow.
+15-agent system for large-scale Claude Code projects with page-scoped, document-driven workflow. Includes `/auto` orchestrator for automated pipeline execution with parallel sub-agent support.
 
 ## Quick Start
 
@@ -16,12 +16,12 @@ cp .mcp.json.example .mcp.json
 ```
 Edit `.mcp.json` to match your environment. This file is gitignored (personal config).
 
-### 3. Phase A — Project Init
+### 3. Automated Workflow (Recommended)
 
-Start by running `/pm-lead` with your project requirements:
+Use `/auto` to run the entire pipeline automatically:
 
 ```
-/pm-lead
+/auto init
 
 Example input:
 "쇼핑몰 프로젝트. 주요 페이지: 로그인, 상품 목록, 상품 상세, 장바구니, 결제.
@@ -29,12 +29,27 @@ Example input:
 장바구니에 담고 결제할 수 있다. 관리자 페이지는 별도 Phase에서 다룬다."
 ```
 
-`/pm-lead` will create:
-- `docs/SSOT.md` — Project overview + requirements
-- `docs/pages/INDEX.md` — Page inventory with status
-
-Then continue Phase A:
+Then build pages and release:
 ```
+/auto page login,product-list,cart    ← Spec → Design → API → Build → Review (parallel)
+/auto release                         ← Final release gate
+```
+
+Or let `/auto` detect the next step automatically:
+```
+/auto                                 ← Reads INDEX.md status, suggests next action
+```
+
+See [Auto Orchestrator](#auto-orchestrator-auto) below for all subcommands.
+
+### 3-alt. Manual Workflow
+
+You can also run each agent individually for fine-grained control.
+
+#### Phase A — Project Init
+
+```
+/pm-lead              ← Requirements → SSOT.md + INDEX.md
 /pm-review            ← Validate SSOT + INDEX consistency
 /design-lead          ← Establish design system (DESIGN_SYSTEM.md)
 /design-review        ← Validate design system
@@ -42,7 +57,7 @@ Then continue Phase A:
 /be-lead              ← BE architecture decisions (DECISIONS/be-arch.md)
 ```
 
-### 4. Phase B — Per-Page Build (repeat for each page)
+#### Phase B — Per-Page Build (repeat for each page)
 
 ```
 /pm-build login           ← Page spec (spec.md)
@@ -59,15 +74,18 @@ Then continue Phase A:
 
 > B-4 (`/be-build`) and B-5 (`/fe-build`) can run in parallel after `api.md` is finalized (B-3).
 
-### 5. Phase C — Release
+#### Phase C — Release
 
 ```
 /review                   ← Final release gate
 ```
 
-## Agent Structure (14 agents)
+## Agent Structure (15 agents)
 
 ```
+Auto
+  /auto            — Orchestrator: automated pipeline with parallel sub-agents
+
 PM Group
   /pm-lead         — Requirements → pages, SSOT + INDEX
   /pm-build        — Per-page detailed spec
@@ -94,6 +112,38 @@ BE Group
 Release
   /review          — Final release gate (integrated)
 ```
+
+## Auto Orchestrator (`/auto`)
+
+The `/auto` command automates the Phase A/B/C workflow, running sequential steps inline and parallel steps via Task sub-agents.
+
+### Subcommands
+
+| Command | Example | Description |
+|---------|---------|-------------|
+| `init` | `/auto init` | Phase A: PM Lead → PM Review → Design Lead → Design Review → FE Lead + BE Lead (parallel) |
+| `page` | `/auto page login,cart` | Phase B full: spec → design → API → build (parallel) → review (parallel) |
+| `build` | `/auto build login` | B-4+B-5 only: FE + BE build in parallel (worktree-isolated) |
+| `review` | `/auto review login` | Review only: BE Review + FE Review + Design Review in parallel |
+| `release` | `/auto release` | Phase C: Release Gate |
+| _(none)_ | `/auto` | Auto-detect next action from INDEX.md page status |
+
+### Parallel Execution
+
+`/auto` uses Task sub-agents for independent work:
+
+- **A-3**: `/fe-lead` + `/be-lead` run simultaneously
+- **B-4+B-5**: `/be-build` + `/fe-build` run simultaneously per page (worktree-isolated)
+- **Review**: `/be-review` + `/fe-review` + `/design-review` run simultaneously per page
+- **Cross-page**: Multiple pages build/review in parallel (e.g., 2 pages = 4 build tasks + 6 review tasks)
+
+### Key Principles
+
+- **INDEX.md single writer**: Only the orchestrator updates INDEX.md; sub-agents never touch it
+- **Sequential where required**: B-1 → B-2 → B-3 always run in order (output dependency)
+- **State-aware skipping**: Already-completed steps are skipped based on page status
+- **Failure isolation**: One page failing doesn't block others
+- **Review gate**: Max 3 retry iterations per reviewer; escalates to Lead on failure
 
 ## Document Structure (2-Tier)
 
